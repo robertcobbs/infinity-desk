@@ -6,31 +6,58 @@
 #include <ESP8266WebServer.h>
 
 #define DATA_PIN 4
-#define NUM_LEDS 190
+#define NUM_LEDS 177
+#define MAX_LOAD_MA 2500					//how many mA are we allowed to draw, at 5 volts
+
 
 ESP8266WebServer server(80);
 
 CRGB leds[NUM_LEDS];
 
 int display_mode = 1;
-int led_hex_color = 0xFF0000;
+int led_hex_color = 0x00FF00;
+int led_red = 255;
+int led_green = 255;
+int led_blue = 255;
+
+// Palette definitions
+CRGBPalette16 currentPalette = PartyColors_p;
+CRGBPalette16 targetPalette = PartyColors_p;
+TBlendType    currentBlending = LINEARBLEND;                  // NOBLEND or LINEARBLEND
+
+
+//WiFi WAN connection info
+char wifissid[] = "";
+char wifipassword[] = "";
 
 void setup() {
     FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, NUM_LEDS);
-    Serial.begin(115200);
+    FastLED.setMaxPowerInVoltsAndMilliamps(5, MAX_LOAD_MA); //assuming 5V
+	Serial.begin(9600);
     Serial.println("Booting");
     WiFi.mode(WIFI_STA);
-    WiFi.begin();
+    WiFi.begin(wifissid, wifipassword);
     // while (WiFi.waitForConnectResult() != WL_CONNECTED) {
     //    Serial.println("Connection Failed! Rebooting...");
     //    delay(5000);
     //    ESP.restart();
     //}
 
-    server.on("/api/display/mode", HTTP_POST, [&](){
-    if (server.args() != 1) return server.send(500, "text/plain", "Requires one argument.");
-    display_mode = server.arg(0).toInt();
-    server.send(200, "text/plain", "OK");
+    server.on("/api/test", HTTP_GET, [&](){
+        server.send(200, "text/plain", "OKAY");
+    });
+    
+    server.on("/api/mode", HTTP_POST, [&](){
+        if (server.args() != 1) return server.send(500, "text/plain", "Requires one argument.");
+        display_mode = server.arg(0).toInt();
+        server.send(200, "text/plain", "OK");
+    });
+
+    server.on("/api/solid_rgb", HTTP_POST, [&](){
+        if (server.args() != 3) return server.send(500, "text/plain", "Requires three arguments.");
+        led_red = server.arg(0).toInt();
+        led_green = server.arg(1).toInt();
+        led_blue = server.arg(2).toInt();
     });
 
     server.begin(); // Web server start
@@ -58,30 +85,68 @@ void setup() {
     
     ArduinoOTA.begin();
     
+    delay(5000); // Delay so the serial debug has time to connect
     Serial.println("Ready");
     Serial.print("IP address: ");
     Serial.println(WiFi.localIP());
 }
 
-void solid_color() {
-    FastLED.clear();
-    for ( int led=0; led<NUM_LEDS; led++ ) {
-		leds[led] = led_hex_color;
-	}
-    FastLED.show();
+void solid_rgb() {
+    fill_solid(leds, NUM_LEDS, CRGB(led_red, led_green, led_blue));
 }
 
-void run_leds() {
-    switch (display_mode) {
-        case 1:
-            solid_color();
-            break;
-  }
+void rainbow_beat() {
+    uint8_t beatA = beatsin8(17, 0, 255);                        // Starting hue
+    uint8_t beatB = beatsin8(13, 0, 255);
+    fill_rainbow(leds, NUM_LEDS, (beatA+beatB)/2, 8);            // Use FastLED's fill_rainbow routine.
+}
+
+void sawtooth() {
+    int bpm = 60;
+    int ms_per_beat = 60000/bpm;                                // 500ms per beat, where 60,000 = 60 seconds * 1000 ms 
+    int ms_per_led = 60000/bpm/NUM_LEDS;
+
+    int cur_led = ((millis() % ms_per_beat) / ms_per_led)%(NUM_LEDS);     // Using millis to count up the strand, with %NUM_LEDS at the end as a safety factor.
+
+    if (cur_led == 0)
+        fill_solid(leds, NUM_LEDS, CRGB::Black);
+    else
+        leds[cur_led] = ColorFromPalette(currentPalette, 0, 255, currentBlending);    // I prefer to use palettes instead of CHSV or CRGB assignments.
+}
+
+void blur() {
+    uint8_t blurAmount = dim8_raw( beatsin8(3,64, 192) );       // A sinewave at 3 Hz with values ranging from 64 to 192.
+    blur1d( leds, NUM_LEDS, blurAmount);                        // Apply some blurring to whatever's already on the strip, which will eventually go black.
+  
+    uint8_t  blur_i = beatsin8(  9, 0, NUM_LEDS);
+    uint8_t  blur_j = beatsin8( 7, 0, NUM_LEDS);
+    uint8_t  blur_k = beatsin8(  5, 0, NUM_LEDS);
+  
+    // The color of each point shifts over time, each at a different speed.
+    uint16_t ms = millis();  
+    leds[(blur_i+blur_j)/2] = CHSV( ms / 29, 200, 255);
+    leds[(blur_j+blur_k)/2] = CHSV( ms / 41, 200, 255);
+    leds[(blur_k+blur_i)/2] = CHSV( ms / 73, 200, 255);
+    leds[(blur_k+blur_i+blur_j)/3] = CHSV( ms / 53, 200, 255);
 }
 
 void loop() {
     ArduinoOTA.handle();
     server.handleClient();
-
-    run_leds();
+    
+    switch (display_mode) {
+        case 1:
+            solid_rgb();
+            break;
+        case 2:
+            rainbow_beat();
+            break;
+        case 3:
+            sawtooth();
+            break;
+        case 4:
+            blur();
+            break;
+    }
+    FastLED.show();
 }
