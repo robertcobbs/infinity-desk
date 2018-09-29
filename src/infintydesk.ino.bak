@@ -58,6 +58,7 @@ void setup() {
         led_red = server.arg(0).toInt();
         led_green = server.arg(1).toInt();
         led_blue = server.arg(2).toInt();
+        display_mode = 1;
     });
 
     server.begin(); // Web server start
