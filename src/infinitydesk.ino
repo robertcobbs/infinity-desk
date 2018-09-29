@@ -20,6 +20,8 @@ int led_red = 255;
 int led_green = 255;
 int led_blue = 255;
 int led_num = 0; // iterator to pass around to know what LED we are on
+bool first_run = true;
+bool run_toggle = true;
 
 unsigned long previousMillis = 0;
 unsigned long currentMillis = 0;
@@ -45,16 +47,27 @@ void setup() {
     
     server.on("/api/mode", HTTP_POST, [&](){
         if (server.args() != 1) return server.send(500, "text/plain", "Requires one argument.");
-        display_mode = server.arg(0).toInt();
         server.send(200, "text/plain", "OK");
+        display_mode = server.arg(0).toInt();
     });
 
-    server.on("/api/solid_rgb", HTTP_POST, [&](){
-        if (server.args() != 3) return server.send(500, "text/plain", "Requires three arguments.");
+    server.on("/api/solid_rgd", HTTP_POST, [&](){
+        if (server.args() != 3) return server.send(500, "text/plain", "Requires one argument.");
+        server.send(200, "text/plain", "OK");
         led_red = server.arg(0).toInt();
         led_green = server.arg(1).toInt();
         led_blue = server.arg(2).toInt();
         display_mode = 1;
+    });
+
+    server.on("/api/color_wipe", HTTP_POST, [&](){
+        if (server.args() != 3) return server.send(500, "text/plain", "Requires three arguments.");
+        server.send(200, "text/plain", "OK");
+        led_red = server.arg(0).toInt();
+        led_green = server.arg(1).toInt();
+        led_blue = server.arg(2).toInt();
+        first_run = true;
+        display_mode = 2;
     });
 
     server.begin(); // Web server start
@@ -101,12 +114,9 @@ void solid_rgb(uint32_t c) {
 }
 
 // Fill the dots one after the other with a color
-void color_wipe(uint32_t c, uint16_t wait) {
-    if(currentMillis - previousMillis > wait){
+void color_wipe(uint32_t c, uint32_t wait) {
+    if(currentMillis - previousMillis > wait) {
         previousMillis = currentMillis;
-        if (led_num > NUM_LEDS){
-            led_num = 0;
-        }
         strip.setPixelColor(led_num, c);
         strip.show();
         led_num++;
@@ -124,6 +134,20 @@ void loop() {
             solid_rgb(strip.Color(led_red, led_green, led_blue));
             break;
         case 2:
-            color_wipe(strip.Color(led_red, led_green, led_blue), currentMillis);
+            if (first_run == true) {
+                led_num = 0;
+                first_run = false;
+            }
+            if (led_num > NUM_LEDS) {
+                led_num = 0;
+                run_toggle = !run_toggle;
+            }
+            if (run_toggle == true) {
+                color_wipe(strip.Color(led_red, led_green, led_blue), 50);
+            }
+            else if (run_toggle == false) {
+                color_wipe(strip.Color(0, 0, 0), 50);
+            }            
             break;
+    }
 }
