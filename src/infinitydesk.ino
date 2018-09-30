@@ -53,6 +53,14 @@ void setup() {
         display_mode = server.arg(0).toInt();
     });
 
+    server.on("/api/set_color", HTTP_POST, [&](){
+        if (server.args() != 3) return server.send(500, "text/plain", "Requires one argument.");
+        server.send(200, "text/plain", "OK");
+        led_red = server.arg(0).toInt();
+        led_green = server.arg(1).toInt();
+        led_blue = server.arg(2).toInt();
+    });
+
     server.on("/api/solid_rgd", HTTP_POST, [&](){
         if (server.args() != 3) return server.send(500, "text/plain", "Requires one argument.");
         server.send(200, "text/plain", "OK");
@@ -78,6 +86,16 @@ void setup() {
         first_run = true;
         display_mode = 3;
 
+    });
+
+    server.on("/api/fade_in_and_out", HTTP_POST, [&](){
+        if (server.args() != 3) return server.send(500, "text/plain", "Requires three arguments.");
+        server.send(200, "text/plain", "OK");
+        led_red = server.arg(0).toInt();
+        led_green = server.arg(1).toInt();
+        led_blue = server.arg(2).toInt();
+        first_run = true;
+        display_mode = 4;
     });
 
     server.begin(); // Web server start
@@ -166,6 +184,42 @@ void rainbowCycle(uint32_t wait) {
     }
 }
 
+void fade_in_and_out(uint8_t red, uint8_t green, uint8_t blue, uint32_t wait) {
+    if (first_run == true) {
+        led_num = 0;
+        run_num = 0;
+        first_run = false;
+    }
+
+    if (currentMillis - previousMillis > wait) {
+        previousMillis = currentMillis;
+        if (run_toggle == true) {
+            if (run_num < 255) {
+                for(uint8_t i=0; i < NUM_LEDS; i++) {
+                    strip.setPixelColor(i, red*run_num/255, green*run_num/255, blue*run_num/255);
+                }
+                strip.show();
+                run_num++;
+            }
+            else if (run_num == 255) {
+                run_toggle = false;
+            }
+        }
+        if (run_toggle == false) {
+            if (run_num > 0) {
+                for(uint8_t i=0; i < NUM_LEDS; i++) {
+                    strip.setPixelColor(i, red*run_num/255, green*run_num/255, blue*run_num/255);
+                }
+                strip.show();
+                run_num--;
+            }
+            else if (run_num == 0) {
+                run_toggle = true;
+            }
+        }
+    }
+}
+
 void loop() {
     ArduinoOTA.handle();
     server.handleClient();
@@ -186,6 +240,8 @@ void loop() {
             break;
         case 3:
             rainbowCycle(20);
+        case 4:
+            fade_in_and_out(led_red, led_green, led_blue, 70);
     }
 }
 
